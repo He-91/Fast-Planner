@@ -58,7 +58,7 @@ namespace rviz
 AerialMapDisplay::AerialMapDisplay()
   : Display()
   , manual_object_(NULL)
-  //! @bug cannot compile @gcc-5 or later, material_(0)
+  , material_()
   , loaded_(false)
   , resolution_(0.0f)
   , width_(0)
