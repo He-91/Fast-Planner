@@ -1,0 +1,34 @@
+# MPPI Controller Configuration
+# This file contains example parameter values for the MPPI controller
+
+# Sample generation parameters
+mppi:
+  num_samples: 1000       # Number of trajectory samples to generate
+  horizon_length: 20      # Planning horizon in time steps
+  dt: 0.1                 # Time step in seconds
+  lambda: 1.0             # Inverse temperature for importance sampling
+  
+  # Noise parameters
+  sigma_pos: 0.2          # Position noise standard deviation
+  sigma_vel: 0.5          # Velocity noise standard deviation  
+  sigma_acc: 1.0          # Acceleration noise standard deviation
+  
+  # Cost function weights
+  w_collision: 1000.0     # Collision avoidance weight
+  w_goal: 10.0            # Goal reaching weight
+  w_smoothness: 1.0       # Trajectory smoothness weight
+  w_control: 0.1          # Control effort weight
+  w_velocity: 10.0        # Velocity constraint weight
+  w_acceleration: 5.0     # Acceleration constraint weight
+  
+  # Physical constraints
+  max_vel: 3.0            # Maximum velocity (m/s)
+  max_acc: 2.5            # Maximum acceleration (m/s^2)
+  safe_distance: 0.3      # Minimum safe distance from obstacles (m)
+
+# Usage Notes:
+# - Increase num_samples for better trajectory quality at cost of computation time
+# - Decrease dt for smoother trajectories but increase horizon_length proportionally  
+# - Higher lambda values make the controller more deterministic
+# - Adjust cost weights based on desired behavior (safety vs efficiency vs smoothness)
+# - sigma_* parameters control exploration vs exploitation trade-off

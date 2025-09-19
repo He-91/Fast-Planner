@@ -40,6 +40,7 @@ void TopoReplanFSM::init(ros::NodeHandle& nh) {
   nh.param("fsm/thresh_no_replan", replan_distance_threshold_, -1.0);
   nh.param("fsm/waypoint_num", waypoint_num_, -1);
   nh.param("fsm/act_map", act_map_, false);
+  nh.param("fsm/use_mppi", use_mppi_, false);  // Enable MPPI-based replanning
   for (int i = 0; i < waypoint_num_; i++) {
     nh.param("fsm/waypoint" + to_string(i) + "_x", waypoints_[i][0], -1.0);
     nh.param("fsm/waypoint" + to_string(i) + "_y", waypoints_[i][1], -1.0);
@@ -377,7 +378,11 @@ bool TopoReplanFSM::callTopologicalTraj(int step) {
   if (step == 1) {
     plan_success = planner_manager_->planGlobalTraj(start_pt_);
   } else {
-    plan_success = planner_manager_->topoReplan(collide_);
+    if (use_mppi_) {
+      plan_success = planner_manager_->mppiReplan(collide_);
+    } else {
+      plan_success = planner_manager_->topoReplan(collide_);
+    }
   }
 
   if (plan_success) {

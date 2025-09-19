@@ -58,6 +58,7 @@ add_executable(fast_planner_node
   src/kino_replan_fsm.cpp
   src/topo_replan_fsm.cpp
   src/planner_manager.cpp
+  src/mppi_controller.cpp
   )
 target_link_libraries(fast_planner_node 
   ${catkin_LIBRARIES}

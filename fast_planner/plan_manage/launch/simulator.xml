@@ -9,6 +9,7 @@
   <arg name="c_num"/>
   <arg name="p_num"/>
   <arg name="odometry_topic"/>
+  <arg name="flyable_obstacles" default="false"/>  <!-- Support flyable obstacles -->
 
   <node pkg ="map_generator" name ="random_forest" type ="random_forest" output = "screen">    
     <remap from="~odometry"   to="$(arg odometry_topic)"/>    
@@ -23,8 +24,9 @@
     <param name="map/obs_num"    value="$(arg p_num)"/>
     <param name="ObstacleShape/lower_rad" value="0.5"/>
     <param name="ObstacleShape/upper_rad" value="0.7"/>
-    <param name="ObstacleShape/lower_hei" value="0.0"/>
-    <param name="ObstacleShape/upper_hei" value="3.0"/>        
+    <!-- Conditional obstacle height based on flyable_obstacles flag -->
+    <param name="ObstacleShape/lower_hei" value="$(eval 0.0 if arg('flyable_obstacles') else 0.0)"/>
+    <param name="ObstacleShape/upper_hei" value="$(eval 1.5 if arg('flyable_obstacles') else 3.0)"/>  
 
     <param name="map/circle_num" value="$(arg c_num)"/>        
     <param name="ObstacleShape/radius_l" value="0.7"/>        
