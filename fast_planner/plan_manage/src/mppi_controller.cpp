@@ -64,13 +64,35 @@ bool MPPIController::generateTrajectory(const Eigen::VectorXd& start_state,
                                       const std::vector<Eigen::Vector3d>& guide_path,
                                       std::vector<Eigen::Vector3d>& trajectory) {
     
+    // Validate input
+    if (start_state.size() != 9) {
+        ROS_ERROR("[MPPI] Invalid start state size: %d, expected 9", (int)start_state.size());
+        return false;
+    }
+    
+    if (params_.num_samples <= 0 || params_.horizon_length <= 0) {
+        ROS_ERROR("[MPPI] Invalid parameters: samples=%d, horizon=%d", 
+                  params_.num_samples, params_.horizon_length);
+        return false;
+    }
+    
     // Clear previous samples
     sample_trajectories_.clear();
     sample_costs_.clear();
     sample_weights_.clear();
     
-    // Generate noise samples and rollout trajectories
-    generateNoiseSamples();
+    // Generate noise samples and rollout trajectories from start state
+    sample_trajectories_.resize(params_.num_samples);
+    for (int i = 0; i < params_.num_samples; ++i) {
+        // Generate noise sequence for this sample
+        std::vector<Eigen::Vector3d> noise_sequence(params_.horizon_length);
+        for (int t = 0; t < params_.horizon_length; ++t) {
+            noise_sequence[t] << acc_noise_(gen_), acc_noise_(gen_), acc_noise_(gen_);
+        }
+        
+        // Rollout trajectory with noise from actual start state
+        rolloutTrajectory(start_state, noise_sequence, sample_trajectories_[i]);
+    }
     
     // Compute costs for all samples
     double min_cost = std::numeric_limits<double>::max();
@@ -86,6 +108,32 @@ bool MPPIController::generateTrajectory(const Eigen::VectorXd& start_state,
         }
     }
     
+    // Check if we have valid trajectories
+    if (std::isinf(min_cost) || min_cost > 1e10) {
+        ROS_WARN("[MPPI] All trajectories have very high cost (min: %f), using best available", min_cost);
+        // Use the best sample even if cost is high
+        trajectory = sample_trajectories_[best_sample_idx];
+        velocity_traj_.clear();
+        acceleration_traj_.clear();
+        velocity_traj_.resize(params_.horizon_length);
+        acceleration_traj_.resize(params_.horizon_length);
+        
+        // Compute basic velocity and acceleration
+        for (int t = 0; t < params_.horizon_length; ++t) {
+            if (t == 0) {
+                velocity_traj_[t] = start_state.segment<3>(3);
+                acceleration_traj_[t] = start_state.segment<3>(6);
+            } else {
+                velocity_traj_[t] = (trajectory[t] - trajectory[t-1]) / params_.dt;
+                if (t > 0) {
+                    acceleration_traj_[t] = (velocity_traj_[t] - velocity_traj_[t-1]) / params_.dt;
+                }
+            }
+        }
+        position_traj_ = trajectory;
+        return true;
+    }
+    
     // Compute importance weights
     double max_cost = *std::max_element(sample_costs_.begin(), sample_costs_.end());
     double weight_sum = 0.0;
@@ -96,9 +144,17 @@ bool MPPIController::generateTrajectory(const Eigen::VectorXd& start_state,
         weight_sum += sample_weights_[i];
     }
     
-    // Normalize weights
-    for (int i = 0; i < params_.num_samples; ++i) {
-        sample_weights_[i] /= weight_sum;
+    // Check for numerical issues
+    if (weight_sum < 1e-10) {
+        ROS_WARN("[MPPI] Weight sum too small, using uniform weights");
+        for (int i = 0; i < params_.num_samples; ++i) {
+            sample_weights_[i] = 1.0 / params_.num_samples;
+        }
+    } else {
+        // Normalize weights
+        for (int i = 0; i < params_.num_samples; ++i) {
+            sample_weights_[i] /= weight_sum;
+        }
     }
     
     // Compute weighted average trajectory
@@ -140,44 +196,20 @@ bool MPPIController::generateTrajectory(const Eigen::VectorXd& start_state,
 void MPPIController::generateNoiseSamples() {
     sample_trajectories_.resize(params_.num_samples);
     
+    // Use a default start state for noise sample generation
+    // In actual trajectory generation, this will be overridden with real start state
+    Eigen::VectorXd default_start(9);
+    default_start.setZero();
+    
     for (int i = 0; i < params_.num_samples; ++i) {
-        sample_trajectories_[i].resize(params_.horizon_length);
-        
         // Generate noise sequence for this sample
         std::vector<Eigen::Vector3d> noise_sequence(params_.horizon_length);
         for (int t = 0; t < params_.horizon_length; ++t) {
-            noise_sequence[t] << pos_noise_(gen_), pos_noise_(gen_), pos_noise_(gen_);
+            noise_sequence[t] << acc_noise_(gen_), acc_noise_(gen_), acc_noise_(gen_);
         }
         
         // Rollout trajectory with noise
-        // For now, simple integration - could be improved with proper dynamics
-        Eigen::Vector3d pos = Eigen::Vector3d::Zero(); // Will be set by start state
-        Eigen::Vector3d vel = Eigen::Vector3d::Zero();
-        Eigen::Vector3d acc = Eigen::Vector3d::Zero();
-        
-        for (int t = 0; t < params_.horizon_length; ++t) {
-            // Add noise to acceleration
-            acc += noise_sequence[t];
-            
-            // Clamp acceleration
-            double acc_norm = acc.norm();
-            if (acc_norm > params_.max_acc) {
-                acc = acc / acc_norm * params_.max_acc;
-            }
-            
-            // Integrate
-            vel += acc * params_.dt;
-            
-            // Clamp velocity
-            double vel_norm = vel.norm();
-            if (vel_norm > params_.max_vel) {
-                vel = vel / vel_norm * params_.max_vel;
-            }
-            
-            pos += vel * params_.dt;
-            
-            sample_trajectories_[i][t] = pos;
-        }
+        rolloutTrajectory(default_start, noise_sequence, sample_trajectories_[i]);
     }
 }
 
