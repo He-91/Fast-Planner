@@ -3,6 +3,7 @@
   <arg name="map_size_x" value="40.0"/>
   <arg name="map_size_y" value="20.0"/>
   <arg name="map_size_z" value=" 5.0"/>
+  <arg name="flyable_obstacles" default="false"/>  <!-- Enable flyable obstacles -->
 
   <arg name="odom_topic" value="/state_ukf/odom" />
 
@@ -78,6 +79,7 @@
     <arg name="map_size_z_" value="$(arg map_size_z)"/>
     <arg name="c_num" value="100"/>
     <arg name="p_num" value="100"/>
+    <arg name="flyable_obstacles" value="$(arg flyable_obstacles)"/>
 
     <arg name="odometry_topic" value="$(arg odom_topic)" />
   </include>

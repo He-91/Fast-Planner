@@ -36,6 +36,7 @@
 #include <plan_env/edt_environment.h>
 
 #include <plan_manage/plan_container.hpp>
+#include <plan_manage/mppi_controller.h>
 
 #include <ros/ros.h>
 
@@ -55,6 +56,7 @@ public:
                          Eigen::Vector3d end_pt, Eigen::Vector3d end_vel);
   bool planGlobalTraj(const Eigen::Vector3d& start_pos);
   bool topoReplan(bool collide);
+  bool mppiReplan(bool collide);  // New MPPI-based local replanning method
 
   void planYaw(const Eigen::Vector3d& start_yaw);
 
@@ -77,6 +79,7 @@ private:
   unique_ptr<KinodynamicAstar> kino_path_finder_;
   unique_ptr<TopologyPRM> topo_prm_;
   vector<BsplineOptimizer::Ptr> bspline_optimizers_;
+  unique_ptr<MPPIController> mppi_controller_;  // MPPI controller for local planning
 
   void updateTrajInfo();
 
@@ -94,6 +97,9 @@ private:
   void refineTraj(NonUniformBspline& best_traj, double& time_inc);
   void reparamBspline(NonUniformBspline& bspline, double ratio, Eigen::MatrixXd& ctrl_pts, double& dt,
                       double& time_inc);
+
+  // MPPI integration
+  NonUniformBspline convertMPPIToTrajectory(const std::vector<Eigen::Vector3d>& mppi_trajectory);
 
   // heading planning
   void calcNextYaw(const double& last_yaw, double& yaw);

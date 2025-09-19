@@ -85,6 +85,10 @@ void FastPlannerManager::initPlanModules(ros::NodeHandle& nh) {
     topo_prm_.reset(new TopologyPRM);
     topo_prm_->setEnvironment(edt_environment_);
     topo_prm_->init(nh);
+    
+    // Initialize MPPI controller for local planning
+    mppi_controller_.reset(new MPPIController);
+    mppi_controller_->init(nh, edt_environment_);
   }
 }
 
@@ -396,6 +400,92 @@ bool FastPlannerManager::topoReplan(bool collide) {
   return true;
 }
 
+bool FastPlannerManager::mppiReplan(bool collide) {
+  ros::Time t_now = ros::Time::now();
+  double local_traj_duration = pp_.local_traj_len_;
+
+  if (!collide) {
+    // If no collision, just continue with current trajectory
+    return true;
+  }
+
+  // Get current state
+  Eigen::VectorXd start_state(9);  // [pos, vel, acc]
+  start_state.head<3>() = local_data_.start_pos_;
+  start_state.segment<3>(3) = local_data_.position_traj_.evaluateDerivative(0, 1);
+  start_state.segment<3>(6) = local_data_.position_traj_.evaluateDerivative(0, 2);
+
+  // Get goal from global trajectory
+  double T_exec = (ros::Time::now() - local_data_.start_time_).toSec();
+  Eigen::Vector3d goal_pos = global_data_.getPosition(T_exec + local_traj_duration);
+
+  // Find collision range to get start and end points for topology search
+  NonUniformBspline init_traj = local_data_.position_traj_;
+  vector<Eigen::Vector3d> colli_start, colli_end, start_pts, end_pts;
+  findCollisionRange(colli_start, colli_end, start_pts, end_pts);
+
+  if (colli_start.size() == 1 && colli_end.size() == 0) {
+    ROS_WARN("Init traj ends in obstacle, using direct MPPI planning.");
+    // Use direct MPPI planning without topology guidance
+    vector<Eigen::Vector3d> empty_guide_path;
+    vector<Eigen::Vector3d> mppi_trajectory;
+    
+    if (mppi_controller_->generateTrajectory(start_state, goal_pos, empty_guide_path, mppi_trajectory)) {
+      // Convert MPPI trajectory to format compatible with existing system
+      local_data_.position_traj_ = convertMPPIToTrajectory(mppi_trajectory);
+      global_data_.setLocalTraj(local_data_.position_traj_, t_now.toSec(), 
+                                local_traj_duration + t_now.toSec(), 0.0);
+      updateTrajInfo();
+      return true;
+    } else {
+      ROS_ERROR("MPPI planning failed!");
+      return false;
+    }
+  }
+
+  // Search for topology paths
+  ROS_INFO("[MPPI]: Searching topology paths");
+  plan_data_.clearTopoPaths();
+  list<GraphNode::Ptr> graph;
+  vector<vector<Eigen::Vector3d>> raw_paths, filtered_paths, select_paths;
+  
+  topo_prm_->findTopoPaths(colli_start.front(), colli_end.back(), start_pts, end_pts, 
+                          graph, raw_paths, filtered_paths, select_paths);
+
+  if (select_paths.empty()) {
+    ROS_WARN("No topological path found, using direct MPPI planning.");
+    vector<Eigen::Vector3d> empty_guide_path;
+    vector<Eigen::Vector3d> mppi_trajectory;
+    
+    if (mppi_controller_->generateTrajectory(start_state, goal_pos, empty_guide_path, mppi_trajectory)) {
+      local_data_.position_traj_ = convertMPPIToTrajectory(mppi_trajectory);
+      global_data_.setLocalTraj(local_data_.position_traj_, t_now.toSec(),
+                                local_traj_duration + t_now.toSec(), 0.0);
+      updateTrajInfo();
+      return true;
+    } else {
+      ROS_ERROR("MPPI planning failed!");
+      return false;
+    }
+  }
+
+  // Use the selected minimum cost path as guide for MPPI
+  vector<Eigen::Vector3d> guide_path = select_paths[0];
+  vector<Eigen::Vector3d> mppi_trajectory;
+  
+  if (mppi_controller_->generateTrajectory(start_state, goal_pos, guide_path, mppi_trajectory)) {
+    local_data_.position_traj_ = convertMPPIToTrajectory(mppi_trajectory);
+    global_data_.setLocalTraj(local_data_.position_traj_, t_now.toSec(),
+                              local_traj_duration + t_now.toSec(), 0.0);
+    updateTrajInfo();
+    ROS_INFO("[MPPI]: Successfully generated trajectory with topology guidance");
+    return true;
+  } else {
+    ROS_ERROR("MPPI planning with topology guidance failed!");
+    return false;
+  }
+}
+
 void FastPlannerManager::selectBestTraj(NonUniformBspline& traj) {
   // sort by jerk
   vector<NonUniformBspline>& trajs = plan_data_.topo_traj_pos2_;
@@ -697,6 +787,43 @@ void FastPlannerManager::calcNextYaw(const double& last_yaw, double& yaw) {
   } else if (diff < -M_PI) {
     yaw = last_yaw + diff + 2 * M_PI;
   }
+}
+
+NonUniformBspline FastPlannerManager::convertMPPIToTrajectory(const std::vector<Eigen::Vector3d>& mppi_trajectory) {
+  if (mppi_trajectory.empty()) {
+    ROS_ERROR("Empty MPPI trajectory!");
+    return NonUniformBspline();
+  }
+  
+  // Convert MPPI trajectory points to control points for B-spline
+  int n_points = mppi_trajectory.size();
+  int n_ctrl_pts = std::max(4, n_points + 2);  // Ensure minimum 4 control points for cubic B-spline
+  
+  Eigen::MatrixXd ctrl_pts(n_ctrl_pts, 3);
+  
+  // Add extra points at start for B-spline continuity
+  ctrl_pts.row(0) = mppi_trajectory[0];
+  ctrl_pts.row(1) = mppi_trajectory[0];
+  
+  // Copy trajectory points
+  for (int i = 0; i < n_points && i + 2 < n_ctrl_pts; ++i) {
+    ctrl_pts.row(i + 2) = mppi_trajectory[i];
+  }
+  
+  // Add extra points at end for B-spline continuity
+  if (n_ctrl_pts > n_points + 2) {
+    for (int i = n_points + 2; i < n_ctrl_pts; ++i) {
+      ctrl_pts.row(i) = mppi_trajectory.back();
+    }
+  }
+  
+  // Set time interval based on MPPI controller dt
+  double dt = mppi_controller_->getTrajectoryDuration() / (n_ctrl_pts - 3);  // B-spline segments
+  
+  // Create B-spline trajectory
+  NonUniformBspline bspline(ctrl_pts, 3, dt);
+  
+  return bspline;
 }
 
 }  // namespace fast_planner

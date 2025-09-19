@@ -180,6 +180,7 @@ private:
   Eigen::Vector3d getOrthoPoint(const vector<Eigen::Vector3d>& path);
 
   int shortestPath(vector<vector<Eigen::Vector3d>>& paths);
+  int minCostPath(vector<vector<Eigen::Vector3d>>& paths);  // New method for minimum cost path selection
 
 public:
   double clearance_;
@@ -198,6 +199,7 @@ public:
                      vector<vector<Eigen::Vector3d>>& select_paths);
 
   double pathLength(const vector<Eigen::Vector3d>& path);
+  double pathCost(const vector<Eigen::Vector3d>& path);  // New method for comprehensive path cost
   vector<Eigen::Vector3d> pathToGuidePts(vector<Eigen::Vector3d>& path, int pt_num);
 
 };

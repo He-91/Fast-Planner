@@ -355,28 +355,23 @@ vector<vector<Eigen::Vector3d>> TopologyPRM::pruneEquivalent(vector<vector<Eigen
 
 vector<vector<Eigen::Vector3d>> TopologyPRM::selectShortPaths(vector<vector<Eigen::Vector3d>>& paths,
                                                               int step) {
-  /* ---------- only reserve top short path ---------- */
+  /* ---------- select single minimum cost path ---------- */
   vector<vector<Eigen::Vector3d>> short_paths;
-  vector<Eigen::Vector3d> short_path;
-  double min_len;
-
-  for (int i = 0; i < reserve_num_ && paths.size() > 0; ++i) {
-    int path_id = shortestPath(paths);
-    if (i == 0) {
-      short_paths.push_back(paths[path_id]);
-      min_len = pathLength(paths[path_id]);
-      paths.erase(paths.begin() + path_id);
-    } else {
-      double rat = pathLength(paths[path_id]) / min_len;
-      if (rat < ratio_to_short_) {
-        short_paths.push_back(paths[path_id]);
-        paths.erase(paths.begin() + path_id);
-      } else {
-        break;
-      }
-    }
+  
+  if (paths.empty()) {
+    std::cout << ", select path num: 0";
+    return short_paths;
   }
-  std::cout << ", select path num: " << short_paths.size();
+  
+  // Select the path with minimum cost (considering both length and obstacle avoidance)
+  int best_path_id = minCostPath(paths);
+  if (best_path_id >= 0) {
+    short_paths.push_back(paths[best_path_id]);
+    std::cout << ", select path num: 1 (min cost: " << pathCost(paths[best_path_id]) << ")";
+  } else {
+    std::cout << ", select path num: 0 (no valid path found)";
+    return short_paths;
+  }
 
   /* ---------- merge with start and end segment ---------- */
   for (int i = 0; i < short_paths.size(); ++i) {
@@ -438,6 +433,45 @@ double TopologyPRM::pathLength(const vector<Eigen::Vector3d>& path) {
     length += (path[i + 1] - path[i]).norm();
   }
   return length;
+}
+
+double TopologyPRM::pathCost(const vector<Eigen::Vector3d>& path) {
+  if (path.empty()) return std::numeric_limits<double>::max();
+  
+  double length_cost = pathLength(path);
+  double obstacle_cost = 0.0;
+  double clearance_cost = 0.0;
+  
+  // Sample points along the path and check obstacle distance
+  for (const auto& point : path) {
+    double dist = edt_environment_->evaluateCoarseEDT(point, -1);
+    
+    // High penalty for collision
+    if (dist < 0.0) {
+      obstacle_cost += 1000.0;  
+    } else if (dist < clearance_) {
+      // Penalty for being too close to obstacles
+      clearance_cost += (clearance_ - dist) * (clearance_ - dist);
+    }
+  }
+  
+  // Weighted combination of costs
+  double total_cost = length_cost + 10.0 * obstacle_cost + 5.0 * clearance_cost;
+  return total_cost;
+}
+
+int TopologyPRM::minCostPath(vector<vector<Eigen::Vector3d>>& paths) {
+  int min_cost_id = -1;
+  double min_cost = std::numeric_limits<double>::max();
+  
+  for (int i = 0; i < paths.size(); ++i) {
+    double cost = pathCost(paths[i]);
+    if (cost < min_cost) {
+      min_cost_id = i;
+      min_cost = cost;
+    }
+  }
+  return min_cost_id;
 }
 
 vector<Eigen::Vector3d> TopologyPRM::discretizePath(const vector<Eigen::Vector3d>& path, int pt_num) {

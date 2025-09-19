@@ -64,6 +64,7 @@ private:
   double waypoints_[50][3];
   int waypoint_num_;
   bool act_map_;
+  bool use_mppi_;  // flag to enable MPPI-based replanning
 
   /* planning data */
   bool trigger_, have_target_, have_odom_, collide_;
