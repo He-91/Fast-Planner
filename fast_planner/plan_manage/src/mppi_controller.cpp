@@ -39,6 +39,7 @@ void MPPIController::init(ros::NodeHandle& nh, EDTEnvironment::Ptr env) {
     nh.param("mppi/w_control", params_.w_control, 0.1);
     nh.param("mppi/w_velocity", params_.w_velocity, 10.0);
     nh.param("mppi/w_acceleration", params_.w_acceleration, 5.0);
+    nh.param("mppi/w_path_following", params_.w_path_following, 20.0);
     
     // Physical limits
     nh.param("mppi/max_vel", params_.max_vel, 3.0);
@@ -76,6 +77,9 @@ bool MPPIController::generateTrajectory(const Eigen::VectorXd& start_state,
         return false;
     }
     
+    ROS_INFO("[MPPI] Generating trajectory: start=[%.2f,%.2f,%.2f], goal=[%.2f,%.2f,%.2f]",
+             start_state[0], start_state[1], start_state[2], goal_pos[0], goal_pos[1], goal_pos[2]);
+    
     // Clear previous samples
     sample_trajectories_.clear();
     sample_costs_.clear();
@@ -107,6 +111,8 @@ bool MPPIController::generateTrajectory(const Eigen::VectorXd& start_state,
             best_sample_idx = i;
         }
     }
+    
+    ROS_INFO("[MPPI] Cost range: min=%.3f, best_idx=%d", min_cost, best_sample_idx);
     
     // Check if we have valid trajectories
     if (std::isinf(min_cost) || min_cost > 1e10) {
@@ -150,6 +156,7 @@ bool MPPIController::generateTrajectory(const Eigen::VectorXd& start_state,
         for (int i = 0; i < params_.num_samples; ++i) {
             sample_weights_[i] = 1.0 / params_.num_samples;
         }
+        weight_sum = 1.0;
     } else {
         // Normalize weights
         for (int i = 0; i < params_.num_samples; ++i) {
@@ -189,7 +196,9 @@ bool MPPIController::generateTrajectory(const Eigen::VectorXd& start_state,
     
     position_traj_ = trajectory;
     
-    ROS_INFO("[MPPI] Generated trajectory with cost: %f", min_cost);
+    double final_goal_dist = (trajectory.back() - goal_pos).norm();
+    ROS_INFO("[MPPI] Generated trajectory with cost: %.3f, final goal distance: %.3f", min_cost, final_goal_dist);
+    
     return true;
 }
 
@@ -222,18 +231,21 @@ void MPPIController::rolloutTrajectory(const Eigen::VectorXd& start_state,
     Eigen::Vector3d vel = start_state.segment<3>(3);
     Eigen::Vector3d acc = start_state.segment<3>(6);
     
+    // Store initial position
+    trajectory[0] = pos;
+    
     for (int t = 0; t < params_.horizon_length; ++t) {
-        // Add noise to acceleration
-        acc += noise_sequence[t];
+        // Add noise to acceleration (scaled by noise parameters)
+        Eigen::Vector3d noisy_acc = acc + noise_sequence[t];
         
         // Clamp acceleration
-        double acc_norm = acc.norm();
+        double acc_norm = noisy_acc.norm();
         if (acc_norm > params_.max_acc) {
-            acc = acc / acc_norm * params_.max_acc;
+            noisy_acc = noisy_acc / acc_norm * params_.max_acc;
         }
         
-        // Integrate
-        vel += acc * params_.dt;
+        // Use semi-implicit Euler integration for better stability
+        vel += noisy_acc * params_.dt;
         
         // Clamp velocity
         double vel_norm = vel.norm();
@@ -241,8 +253,16 @@ void MPPIController::rolloutTrajectory(const Eigen::VectorXd& start_state,
             vel = vel / vel_norm * params_.max_vel;
         }
         
+        // Update position with new velocity
         pos += vel * params_.dt;
-        trajectory[t] = pos;
+        
+        // Store trajectory point (offset by 1 since we already stored t=0)
+        if (t + 1 < params_.horizon_length) {
+            trajectory[t + 1] = pos;
+        }
+        
+        // Update acceleration for next iteration (simple dynamics model)
+        acc = noisy_acc;
     }
 }
 
@@ -286,11 +306,25 @@ double MPPIController::computeTrajectoryCost(const std::vector<Eigen::Vector3d>&
 }
 
 double MPPIController::computeCollisionCost(const Eigen::Vector3d& pos) {
+    if (!env_) {
+        ROS_WARN_THROTTLE(1.0, "[MPPI] Environment not initialized for collision checking");
+        return 1000.0;  // High penalty for uninitialized environment
+    }
+    
     double dist = env_->evaluateCoarseEDT(pos, -1);
+    
+    // Check for invalid distance values
+    if (std::isnan(dist) || std::isinf(dist)) {
+        ROS_WARN_THROTTLE(1.0, "[MPPI] Invalid distance value from EDT: %f", dist);
+        return 1000.0;  // High penalty for invalid distance
+    }
+    
+    // Apply collision penalty
     if (dist < params_.safe_distance) {
         double penalty = params_.safe_distance - dist;
         return penalty * penalty;
     }
+    
     return 0.0;
 }
 
@@ -304,17 +338,20 @@ double MPPIController::computePathFollowingCost(const std::vector<Eigen::Vector3
     
     double total_cost = 0.0;
     
+    // More efficient path following cost - use parametric distance along path
     for (const auto& traj_point : trajectory) {
-        // Find closest point on guide path
+        // Find closest point on guide path using simple nearest neighbor
+        // This could be optimized further with KD-tree for longer paths
         double min_dist_sq = std::numeric_limits<double>::max();
         for (const auto& guide_point : guide_path) {
             double dist_sq = (traj_point - guide_point).squaredNorm();
             min_dist_sq = std::min(min_dist_sq, dist_sq);
         }
-        total_cost += min_dist_sq;
+        total_cost += sqrt(min_dist_sq);  // Use distance instead of squared distance
     }
     
-    return total_cost / trajectory.size();
+    // Normalize by trajectory length to make it scale-independent
+    return params_.w_path_following * total_cost / trajectory.size();
 }
 
 double MPPIController::computeSmoothnessCost(const std::vector<Eigen::Vector3d>& trajectory) {

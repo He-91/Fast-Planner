@@ -409,11 +409,30 @@ bool FastPlannerManager::mppiReplan(bool collide) {
     return true;
   }
 
-  // Get current state
+  // Get current state with proper error handling
   Eigen::VectorXd start_state(9);  // [pos, vel, acc]
   start_state.head<3>() = local_data_.start_pos_;
-  start_state.segment<3>(3) = local_data_.position_traj_.getDerivative().evaluateDeBoorT(0.0);
-  start_state.segment<3>(6) = local_data_.position_traj_.getDerivative().getDerivative().evaluateDeBoorT(0.0);
+  
+  // Safely get velocity and acceleration from trajectory
+  try {
+    if (!local_data_.position_traj_.empty()) {
+      start_state.segment<3>(3) = local_data_.position_traj_.getDerivative().evaluateDeBoorT(0.0);
+      start_state.segment<3>(6) = local_data_.position_traj_.getDerivative().getDerivative().evaluateDeBoorT(0.0);
+    } else {
+      // If no trajectory exists, assume zero velocity and acceleration
+      start_state.segment<3>(3) = Eigen::Vector3d::Zero();
+      start_state.segment<3>(6) = Eigen::Vector3d::Zero();
+      ROS_WARN("[MPPI] No existing trajectory, using zero velocity/acceleration");
+    }
+  } catch (const std::exception& e) {
+    ROS_WARN("[MPPI] Error getting trajectory derivatives: %s, using zero values", e.what());
+    start_state.segment<3>(3) = Eigen::Vector3d::Zero();
+    start_state.segment<3>(6) = Eigen::Vector3d::Zero();
+  }
+  
+  ROS_INFO("[MPPI] Start state: pos=[%.2f,%.2f,%.2f], vel=[%.2f,%.2f,%.2f]", 
+           start_state[0], start_state[1], start_state[2],
+           start_state[3], start_state[4], start_state[5]);
 
   // Get goal from global trajectory
   double T_exec = (ros::Time::now() - local_data_.start_time_).toSec();
@@ -429,6 +448,11 @@ bool FastPlannerManager::mppiReplan(bool collide) {
     // Use direct MPPI planning without topology guidance
     vector<Eigen::Vector3d> empty_guide_path;
     vector<Eigen::Vector3d> mppi_trajectory;
+    
+    if (!mppi_controller_) {
+      ROS_ERROR("[MPPI] MPPI controller not initialized!");
+      return false;
+    }
     
     if (mppi_controller_->generateTrajectory(start_state, goal_pos, empty_guide_path, mppi_trajectory)) {
       // Convert MPPI trajectory to format compatible with existing system
@@ -457,6 +481,11 @@ bool FastPlannerManager::mppiReplan(bool collide) {
     vector<Eigen::Vector3d> empty_guide_path;
     vector<Eigen::Vector3d> mppi_trajectory;
     
+    if (!mppi_controller_) {
+      ROS_ERROR("[MPPI] MPPI controller not initialized!");
+      return false;
+    }
+    
     if (mppi_controller_->generateTrajectory(start_state, goal_pos, empty_guide_path, mppi_trajectory)) {
       local_data_.position_traj_ = convertMPPIToTrajectory(mppi_trajectory);
       global_data_.setLocalTraj(local_data_.position_traj_, t_now.toSec(),
@@ -472,6 +501,13 @@ bool FastPlannerManager::mppiReplan(bool collide) {
   // Use the selected minimum cost path as guide for MPPI
   vector<Eigen::Vector3d> guide_path = select_paths[0];
   vector<Eigen::Vector3d> mppi_trajectory;
+  
+  if (!mppi_controller_) {
+    ROS_ERROR("[MPPI] MPPI controller not initialized!");
+    return false;
+  }
+  
+  ROS_INFO("[MPPI] Using topology guidance path with %zu points", guide_path.size());
   
   if (mppi_controller_->generateTrajectory(start_state, goal_pos, guide_path, mppi_trajectory)) {
     local_data_.position_traj_ = convertMPPIToTrajectory(mppi_trajectory);
@@ -817,11 +853,20 @@ NonUniformBspline FastPlannerManager::convertMPPIToTrajectory(const std::vector<
     }
   }
   
-  // Set time interval based on MPPI controller dt
-  double dt = mppi_controller_->getTrajectoryDuration() / (n_ctrl_pts - 3);  // B-spline segments
+  // Use MPPI dt directly for consistent timing
+  double dt = 0.1;  // Default MPPI dt
+  if (mppi_controller_) {
+    // Get the actual MPPI dt parameter
+    dt = mppi_controller_->getTrajectoryDuration() / n_points;
+  }
+  
+  // Ensure minimum reasonable time step
+  dt = std::max(dt, 0.05);
   
   // Create B-spline trajectory
   NonUniformBspline bspline(ctrl_pts, 3, dt);
+  
+  ROS_INFO("[FastPlannerManager] Created B-spline with %d control points, dt=%.3f", n_ctrl_pts, dt);
   
   return bspline;
 }
