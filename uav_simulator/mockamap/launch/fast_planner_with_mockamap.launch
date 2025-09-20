@@ -1,0 +1,34 @@
+<launch>
+  <!-- Launch mockamap for simulation environment -->
+  <node pkg="mockamap" type="mockamap_node" name="mockamap_node" output="screen">
+    <param name="seed" type="int" value="511"/>
+    <param name="update_freq" type="double" value="1.0"/>
+
+    <!--  box edge length, unit meter-->
+    <param name="resolution" type="double" value="0.1"/>
+
+    <!-- map size unit meter-->
+    <param name="x_length" type="int" value="20"/>
+    <param name="y_length" type="int" value="20"/>
+    <param name="z_length" type="int" value="5"/>
+    
+    <!-- 1 perlin noise 3D - good for UAV planning -->
+    <param name="type" type="int" value="1"/>
+
+    <!-- Perlin noise parameters optimized for Fast-Planner -->
+    <param name="complexity"    type="double" value="0.05"/>
+    <param name="fill"          type="double" value="0.25"/>
+    <param name="fractal"       type="int"    value="2"/>
+    <param name="attenuation"   type="double" value="0.15"/>
+  </node>
+
+  <!-- Launch RViz with Fast-Planner configuration -->
+  <node name="rviz" pkg="rviz" type="rviz"
+        args="-d $(find mockamap)/config/rviz.rviz"
+        />
+
+  <!-- Optional: Add static transform for easier visualization -->
+  <node pkg="tf" type="static_transform_publisher" name="world_to_map" 
+        args="0 0 0 0 0 0 world map 100" />
+        
+</launch>
