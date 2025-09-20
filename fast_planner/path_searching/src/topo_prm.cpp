@@ -98,10 +98,27 @@ void TopologyPRM::findTopoPaths(Eigen::Vector3d start, Eigen::Vector3d end,
   prune_time = (ros::Time::now() - t1).toSec();
   // cout << "prune: " << (t2 - t1).toSec() << endl;
 
-  /* ---------- select N shortest paths ---------- */
+  /* ---------- select paths using multi-directional search ---------- */
   t1 = ros::Time::now();
 
-  select_paths = selectShortPaths(filtered_paths, 1);
+  // Use multi-directional path search when obstacles are detected
+  vector<vector<Eigen::Vector3d>> directional_paths;
+  findMultiDirectionalPaths(start, end, start_pts, end_pts, directional_paths);
+  
+  // Add traditional filtered paths to the candidates
+  directional_paths.insert(directional_paths.end(), filtered_paths.begin(), filtered_paths.end());
+  
+  // Select the best path from all directional candidates
+  if (!directional_paths.empty()) {
+    int best_path_id = minCostPath(directional_paths);
+    if (best_path_id >= 0) {
+      select_paths.push_back(directional_paths[best_path_id]);
+      std::cout << ", selected path from " << directional_paths.size() << " directional candidates";
+    }
+  } else {
+    // Fallback to original selection if no directional paths found
+    select_paths = selectShortPaths(filtered_paths, 1);
+  }
 
   select_time = (ros::Time::now() - t1).toSec();
 
@@ -755,5 +772,145 @@ bool TopologyPRM::triangleVisib(Eigen::Vector3d pt, Eigen::Vector3d p1, Eigen::V
 
   return true;
 }
-// TopologyPRM::
+
+void TopologyPRM::findMultiDirectionalPaths(Eigen::Vector3d start, Eigen::Vector3d end, 
+                                            vector<Eigen::Vector3d> start_pts, vector<Eigen::Vector3d> end_pts,
+                                            vector<vector<Eigen::Vector3d>>& directional_paths) {
+  directional_paths.clear();
+  
+  // Get obstacle avoidance directions
+  vector<Eigen::Vector3d> directions = getObstacleAvoidanceDirections(start, end);
+  
+  ROS_INFO("[Topo]: Exploring %lu directional paths", directions.size());
+  
+  // Create path for each direction
+  for (const auto& direction : directions) {
+    list<GraphNode::Ptr> dir_graph = createDirectionalGraph(start, end, direction);
+    
+    if (dir_graph.size() >= 2) {  // At least start and end nodes
+      // Use simplified path search for directional graphs
+      vector<vector<Eigen::Vector3d>> dir_raw_paths;
+      
+      // Save current graph and restore after
+      list<GraphNode::Ptr> original_graph = graph_;
+      graph_ = dir_graph;
+      
+      dir_raw_paths = searchPaths();
+      
+      // Restore original graph
+      graph_ = original_graph;
+      
+      // Add valid paths to directional_paths
+      for (const auto& path : dir_raw_paths) {
+        if (!path.empty()) {
+          // Add start and end segments
+          vector<Eigen::Vector3d> complete_path;
+          complete_path.insert(complete_path.end(), start_pts.begin(), start_pts.end());
+          complete_path.insert(complete_path.end(), path.begin(), path.end());
+          complete_path.insert(complete_path.end(), end_pts.begin(), end_pts.end());
+          
+          directional_paths.push_back(complete_path);
+        }
+      }
+    }
+  }
+  
+  ROS_INFO("[Topo]: Found %lu directional paths", directional_paths.size());
+}
+
+list<GraphNode::Ptr> TopologyPRM::createDirectionalGraph(Eigen::Vector3d start, Eigen::Vector3d end, 
+                                                         Eigen::Vector3d bias_direction) {
+  list<GraphNode::Ptr> dir_graph;
+  
+  // Create start and end nodes
+  GraphNode::Ptr start_node = GraphNode::Ptr(new GraphNode(start, GraphNode::Guard, 0));
+  GraphNode::Ptr end_node = GraphNode::Ptr(new GraphNode(end, GraphNode::Guard, 1));
+  
+  dir_graph.push_back(start_node);
+  dir_graph.push_back(end_node);
+  
+  // Sample points biased toward the given direction
+  int node_id = 1;
+  int sample_num = 0;
+  int max_directional_samples = max_sample_num_ / 4;  // Reduce samples per direction
+  double sample_time = 0.0;
+  double max_directional_time = max_sample_time_ / 4.0;
+  
+  ros::Time t1, t2;
+  while (sample_time < max_directional_time && sample_num < max_directional_samples) {
+    t1 = ros::Time::now();
+    
+    Eigen::Vector3d pt = getDirectionalSample(bias_direction);
+    ++sample_num;
+    
+    double dist = edt_environment_->evaluateCoarseEDT(pt, -1.0);
+    if (dist <= clearance_) {
+      sample_time += (ros::Time::now() - t1).toSec();
+      continue;
+    }
+    
+    // Simple visibility check to start and end
+    Eigen::Vector3d pc;
+    bool visible_to_start = lineVisib(start, pt, clearance_, pc, 0);
+    bool visible_to_end = lineVisib(pt, end, clearance_, pc, 0);
+    
+    if (visible_to_start || visible_to_end) {
+      GraphNode::Ptr new_node = GraphNode::Ptr(new GraphNode(pt, GraphNode::Guard, ++node_id));
+      dir_graph.push_back(new_node);
+      
+      // Connect to start or end if visible
+      if (visible_to_start) {
+        start_node->neighbors_.push_back(new_node);
+        new_node->neighbors_.push_back(start_node);
+      }
+      if (visible_to_end) {
+        end_node->neighbors_.push_back(new_node);
+        new_node->neighbors_.push_back(end_node);
+      }
+    }
+    
+    sample_time += (ros::Time::now() - t1).toSec();
+  }
+  
+  return dir_graph;
+}
+
+Eigen::Vector3d TopologyPRM::getDirectionalSample(Eigen::Vector3d bias_direction) {
+  // Get a normal sample first
+  Eigen::Vector3d sample = getSample();
+  
+  // Bias the sample toward the given direction
+  double bias_strength = 0.3;  // How much to bias (0 = no bias, 1 = full bias)
+  sample += bias_direction * bias_strength * sample_r_.norm() * rand_pos_(eng_);
+  
+  return sample;
+}
+
+vector<Eigen::Vector3d> TopologyPRM::getObstacleAvoidanceDirections(Eigen::Vector3d start, Eigen::Vector3d goal) {
+  vector<Eigen::Vector3d> directions;
+  
+  // Calculate the main direction from start to goal
+  Eigen::Vector3d main_dir = (goal - start).normalized();
+  
+  // Create a local coordinate system
+  Eigen::Vector3d up(0, 0, 1);
+  Eigen::Vector3d side = main_dir.cross(up).normalized();
+  if (side.norm() < 0.1) {  // main_dir is nearly vertical
+    side = Eigen::Vector3d(1, 0, 0);
+  }
+  Eigen::Vector3d vertical = main_dir.cross(side).normalized();
+  
+  // Define four directions: up, down, left, right relative to main direction
+  double offset_magnitude = sample_r_.norm() * 0.5;  // How far to deviate
+  
+  directions.push_back(vertical * offset_magnitude);                    // Up
+  directions.push_back(-vertical * offset_magnitude);                   // Down  
+  directions.push_back(side * offset_magnitude);                        // Right
+  directions.push_back(-side * offset_magnitude);                       // Left
+  
+  ROS_DEBUG("[Topo]: Generated 4 obstacle avoidance directions");
+  return directions;
+}
+
+}  // namespace fast_planner
 }  // namespace fast_planner
