@@ -29,6 +29,19 @@
 #include <plan_env/edt_environment.h>
 #include <plan_env/raycast.h>
 #include <random>
+#include <vector>
+#include <list>
+#include <memory>
+#include <iostream>
+#include <ros/ros.h>
+#include <Eigen/Dense>
+
+using std::vector;
+using std::list;
+using std::shared_ptr;
+using std::default_random_engine;
+using std::random_device;
+using std::uniform_real_distribution;
 
 namespace fast_planner {
 
@@ -181,6 +194,15 @@ private:
 
   int shortestPath(vector<vector<Eigen::Vector3d>>& paths);
   int minCostPath(vector<vector<Eigen::Vector3d>>& paths);  // New method for minimum cost path selection
+  
+  // Multi-directional path searching methods
+  void findMultiDirectionalPaths(Eigen::Vector3d start, Eigen::Vector3d end, 
+                                vector<Eigen::Vector3d> start_pts, vector<Eigen::Vector3d> end_pts,
+                                vector<vector<Eigen::Vector3d>>& directional_paths);
+  list<GraphNode::Ptr> createDirectionalGraph(Eigen::Vector3d start, Eigen::Vector3d end, 
+                                              Eigen::Vector3d bias_direction);
+  Eigen::Vector3d getDirectionalSample(Eigen::Vector3d bias_direction);
+  vector<Eigen::Vector3d> getObstacleAvoidanceDirections(Eigen::Vector3d start, Eigen::Vector3d goal);
 
 public:
   double clearance_;
