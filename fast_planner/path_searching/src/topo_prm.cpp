@@ -25,6 +25,7 @@
 
 #include <path_searching/topo_prm.h>
 #include <thread>
+#include <ros/ros.h>
 
 namespace fast_planner {
 TopologyPRM::TopologyPRM(/* args */) {}
