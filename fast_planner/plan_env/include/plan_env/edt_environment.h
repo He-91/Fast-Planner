@@ -70,7 +70,7 @@ public:
                             double& value, Eigen::Vector3d& grad);
   void evaluateEDTWithGrad(const Eigen::Vector3d& pos, double time,
                            double& dist, Eigen::Vector3d& grad);
-  double evaluateCoarseEDT(Eigen::Vector3d& pos, double time);
+  double evaluateCoarseEDT(const Eigen::Vector3d& pos, double time);
   void getMapRegion(Eigen::Vector3d& ori, Eigen::Vector3d& size) {
     sdf_map_->getRegion(ori, size);
   }

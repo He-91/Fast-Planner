@@ -117,14 +117,10 @@ void EDTEnvironment::evaluateEDTWithGrad(const Eigen::Vector3d& pos,
   interpolateTrilinear(dists, diff, dist, grad);
 }
 
-double EDTEnvironment::evaluateCoarseEDT(Eigen::Vector3d& pos, double time) {
-  double d1 = sdf_map_->getDistance(pos);
-  if (time < 0.0) {
-    return d1;
-  } else {
-    double d2 = minDistToAllBox(pos, time);
-    return min(d1, d2);
-  }
+double EDTEnvironment::evaluateCoarseEDT(const Eigen::Vector3d& pos, double time) {
+  double dist = sdf_map_->getDistance(pos);
+  // double dist = minDistToAllBox(pos, time);
+  return dist;
 }
 
 // EDTEnvironment::

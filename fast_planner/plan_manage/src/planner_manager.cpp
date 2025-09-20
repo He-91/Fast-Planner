@@ -412,8 +412,8 @@ bool FastPlannerManager::mppiReplan(bool collide) {
   // Get current state
   Eigen::VectorXd start_state(9);  // [pos, vel, acc]
   start_state.head<3>() = local_data_.start_pos_;
-  start_state.segment<3>(3) = local_data_.position_traj_.evaluateDerivative(0, 1);
-  start_state.segment<3>(6) = local_data_.position_traj_.evaluateDerivative(0, 2);
+  start_state.segment<3>(3) = local_data_.position_traj_.getDerivative().evaluateDeBoorT(0.0);
+  start_state.segment<3>(6) = local_data_.position_traj_.getDerivative().getDerivative().evaluateDeBoorT(0.0);
 
   // Get goal from global trajectory
   double T_exec = (ros::Time::now() - local_data_.start_time_).toSec();

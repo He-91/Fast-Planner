@@ -370,7 +370,7 @@ void TopoReplanFSM::checkCollisionCallback(const ros::TimerEvent& e) {
   }
 }
 
-bool TopoReplanFSM::callSearchAndOptimization() {}
+bool TopoReplanFSM::callSearchAndOptimization() { return false; }
 
 bool TopoReplanFSM::callTopologicalTraj(int step) {
   bool plan_success;
