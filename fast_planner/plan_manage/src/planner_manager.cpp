@@ -415,7 +415,7 @@ bool FastPlannerManager::mppiReplan(bool collide) {
   
   // Safely get velocity and acceleration from trajectory
   try {
-    if (!local_data_.position_traj_.empty()) {
+    if (local_data_.position_traj_.getControlPoint().size() > 0) {
       start_state.segment<3>(3) = local_data_.position_traj_.getDerivative().evaluateDeBoorT(0.0);
       start_state.segment<3>(6) = local_data_.position_traj_.getDerivative().getDerivative().evaluateDeBoorT(0.0);
     } else {
