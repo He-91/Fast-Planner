@@ -1,0 +1,123 @@
+<launch>
+  <!-- Environment Selection Launch File for Fast-Planner -->
+  <!-- Choose between different simulation environments -->
+  
+  <!-- Environment Selection: 1=Random Forest (default), 2=Mockamap -->
+  <arg name="environment" default="1" doc="1: Random Forest obstacles, 2: Mockamap procedural"/>
+  
+  <!-- Global parameters -->
+  <arg name="map_size_x" value="40.0"/>
+  <arg name="map_size_y" value="20.0"/>
+  <arg name="map_size_z" value=" 5.0"/>
+  <arg name="odom_topic" value="/state_ukf/odom" />
+  
+  <!-- Flight parameters -->
+  <arg name="max_vel" value="3.0" />
+  <arg name="max_acc" value="2.5" />
+  <arg name="flight_type" value="1" />  <!-- Use 2D Nav Goal -->
+
+  <!-- Environment 1: Random Forest (Original) -->
+  <group if="$(eval arg('environment') == 1)">
+    <param name="/environment_name" value="Random Forest" type="string"/>
+    <include file="$(find plan_manage)/launch/topo_replan.launch">
+      <arg name="map_size_x" value="$(arg map_size_x)"/>
+      <arg name="map_size_y" value="$(arg map_size_y)"/>
+      <arg name="map_size_z" value="$(arg map_size_z)"/>
+      <arg name="odom_topic" value="$(arg odom_topic)"/>
+      <arg name="max_vel" value="$(arg max_vel)"/>
+      <arg name="max_acc" value="$(arg max_acc)"/>
+      <arg name="flight_type" value="$(arg flight_type)"/>
+      <arg name="flyable_obstacles" value="false"/>
+    </include>
+  </group>
+
+  <!-- Environment 2: Mockamap -->
+  <group if="$(eval arg('environment') == 2)">
+    <param name="/environment_name" value="Mockamap Procedural" type="string"/>
+    
+    <!-- Launch Mockamap for procedural environment -->
+    <node pkg="mockamap" type="mockamap_node" name="mockamap_node" output="screen">
+      <param name="seed" type="int" value="511"/>
+      <param name="update_freq" type="double" value="1.0"/>
+      <param name="resolution" type="double" value="0.1"/>
+      
+      <!-- Map size (adjusted for Fast-Planner) -->
+      <param name="x_length" type="int" value="$(eval int(arg('map_size_x')))"/>
+      <param name="y_length" type="int" value="$(eval int(arg('map_size_y')))"/>
+      <param name="z_length" type="int" value="$(eval int(arg('map_size_z')))"/>
+      
+      <!-- Perlin noise 3D optimized for UAV planning -->
+      <param name="type" type="int" value="1"/>
+      <param name="complexity"    type="double" value="0.05"/>
+      <param name="fill"          type="double" value="0.25"/>
+      <param name="fractal"       type="int"    value="2"/>
+      <param name="attenuation"   type="double" value="0.15"/>
+    </node>
+
+    <!-- Fast-Planner with Mockamap -->
+    <include file="$(find plan_manage)/launch/topo_algorithm.xml">
+      <arg name="map_size_x_" value="$(arg map_size_x)"/>
+      <arg name="map_size_y_" value="$(arg map_size_y)"/>
+      <arg name="map_size_z_" value="$(arg map_size_z)"/>
+      <arg name="odometry_topic" value="$(arg odom_topic)"/>
+      <arg name="max_vel" value="$(arg max_vel)"/>
+      <arg name="max_acc" value="$(arg max_acc)"/>
+      <arg name="flight_type" value="$(arg flight_type)"/>
+      
+      <!-- Use mockamap point cloud instead of camera/depth -->
+      <arg name="camera_pose_topic" value="/mockamap_node/pose"/>
+      <arg name="depth_topic" value="/null_topic"/>
+      <arg name="cloud_topic" value="/mockamap_node/global_cloud"/>
+      
+      <!-- Camera intrinsics (not used with mockamap but required) -->
+      <arg name="cx" value="321.04638671875"/>
+      <arg name="cy" value="243.44969177246094"/>
+      <arg name="fx" value="387.229248046875"/>
+      <arg name="fy" value="387.229248046875"/>
+      
+      <!-- Waypoints for environment 2 -->
+      <arg name="point_num" value="3"/>
+      <arg name="point0_x" value="15.0"/>
+      <arg name="point0_y" value="0.0"/>
+      <arg name="point0_z" value="2.0"/>
+      <arg name="point1_x" value="15.0"/>
+      <arg name="point1_y" value="8.0"/>
+      <arg name="point1_z" value="2.0"/>
+      <arg name="point2_x" value="-15.0"/>
+      <arg name="point2_y" value="0.0"/>
+      <arg name="point2_z" value="2.0"/>
+    </include>
+
+    <!-- Trajectory server for mockamap environment -->
+    <node pkg="plan_manage" name="traj_server" type="traj_server" output="screen">
+      <remap from="/position_cmd" to="planning/pos_cmd"/>
+      <remap from="/odom_world" to="$(arg odom_topic)"/>
+      <param name="traj_server/time_forward" value="1.5" type="double"/>
+    </node>
+
+    <!-- Waypoint generator -->
+    <node pkg="waypoint_generator" name="waypoint_generator" type="waypoint_generator" output="screen">
+      <remap from="~odom" to="$(arg odom_topic)"/>        
+      <remap from="~goal" to="/move_base_simple/goal"/>
+      <remap from="~traj_start_trigger" to="/traj_start_trigger" />
+      <param name="waypoint_type" value="manual-lonely-waypoint"/>    
+    </node>
+
+    <!-- Simplified simulator for mockamap (no random_forest node needed) -->
+    <include file="$(find plan_manage)/launch/mockamap_simulator.xml">
+      <arg name="map_size_x_" value="$(arg map_size_x)"/>
+      <arg name="map_size_y_" value="$(arg map_size_y)"/>
+      <arg name="map_size_z_" value="$(arg map_size_z)"/>
+      <arg name="odometry_topic" value="$(arg odom_topic)"/>
+    </include>
+  </group>
+
+  <!-- RViz visualization (common for both environments) -->
+  <node name="rviz" pkg="rviz" type="rviz" output="screen" 
+        args="-d $(find plan_manage)/config/topo_replan.rviz" />
+
+  <!-- Information display -->
+  <node pkg="rostopic" name="env_info" type="rostopic" 
+        args="echo /environment_name" output="screen" />
+
+</launch>

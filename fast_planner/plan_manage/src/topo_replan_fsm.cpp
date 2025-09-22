@@ -430,6 +430,17 @@ bool TopoReplanFSM::callTopologicalTraj(int step) {
                                        Eigen::Vector4d(0, 0, 0, 1), 0);
     visualization_->drawBspline(locdat->position_traj_, 0.08, Eigen::Vector4d(1.0, 0.0, 0.0, 1), false,
                                 0.15, Eigen::Vector4d(1.0, 1.0, 1.0, 1), 99, 99);
+    
+    // Visualize topology paths for user to see the multiple path options
+    if (!plan_data->topo_filtered_paths_.empty()) {
+      visualization_->drawTopoPathsPhase1(plan_data->topo_filtered_paths_, 0.05);
+      ROS_INFO("[Topo]: Visualizing %zu filtered topology paths", plan_data->topo_filtered_paths_.size());
+    }
+    if (!plan_data->topo_select_paths_.empty()) {
+      visualization_->drawTopoPathsPhase2(plan_data->topo_select_paths_, 0.08);
+      ROS_INFO("[Topo]: Visualizing %zu selected topology paths", plan_data->topo_select_paths_.size());
+    }
+    
     visualization_->drawBsplinesPhase2(plan_data->topo_traj_pos2_, 0.075);
     visualization_->drawYawTraj(locdat->position_traj_, locdat->yaw_traj_, plan_data->dt_yaw_);
 

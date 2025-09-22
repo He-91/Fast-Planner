@@ -476,6 +476,11 @@ bool FastPlannerManager::mppiReplan(bool collide) {
   topo_prm_->findTopoPaths(colli_start.front(), colli_end.back(), start_pts, end_pts, 
                           graph, raw_paths, filtered_paths, select_paths);
 
+  // Store topology paths for visualization (same as in topoReplan)
+  if (!select_paths.empty()) {
+    plan_data_.addTopoPaths(graph, raw_paths, filtered_paths, select_paths);
+  }
+
   if (select_paths.empty()) {
     ROS_WARN("No topological path found, using direct MPPI planning.");
     vector<Eigen::Vector3d> empty_guide_path;
@@ -498,28 +503,63 @@ bool FastPlannerManager::mppiReplan(bool collide) {
     }
   }
 
-  // Use the selected minimum cost path as guide for MPPI
-  vector<Eigen::Vector3d> guide_path = select_paths[0];
-  vector<Eigen::Vector3d> mppi_trajectory;
+  // Try MPPI planning with each selected topology path and choose the best result
+  vector<pair<double, NonUniformBspline>> trajectory_candidates;  // cost, trajectory pairs
   
   if (!mppi_controller_) {
     ROS_ERROR("[MPPI] MPPI controller not initialized!");
     return false;
   }
   
-  ROS_INFO("[MPPI] Using topology guidance path with %zu points", guide_path.size());
+  ROS_INFO("[MPPI] Testing %zu topology paths for best trajectory", select_paths.size());
   
-  if (mppi_controller_->generateTrajectory(start_state, goal_pos, guide_path, mppi_trajectory)) {
-    local_data_.position_traj_ = convertMPPIToTrajectory(mppi_trajectory);
-    global_data_.setLocalTraj(local_data_.position_traj_, t_now.toSec(),
-                              local_traj_duration + t_now.toSec(), 0.0);
-    updateTrajInfo();
-    ROS_INFO("[MPPI]: Successfully generated trajectory with topology guidance");
-    return true;
-  } else {
-    ROS_ERROR("MPPI planning with topology guidance failed!");
+  for (int i = 0; i < select_paths.size(); ++i) {
+    vector<Eigen::Vector3d> guide_path = select_paths[i];
+    vector<Eigen::Vector3d> mppi_trajectory;
+    
+    ROS_INFO("[MPPI] Testing topology path %d with %zu points", i, guide_path.size());
+    
+    if (mppi_controller_->generateTrajectory(start_state, goal_pos, guide_path, mppi_trajectory)) {
+      NonUniformBspline candidate_traj = convertMPPIToTrajectory(mppi_trajectory);
+      
+      // Simple cost evaluation - could be enhanced with more sophisticated metrics
+      double traj_cost = 0.0;
+      // Add trajectory length cost
+      double tm, tmp;
+      candidate_traj.getTimeSpan(tm, tmp);
+      for (double t = tm; t <= tmp; t += 0.1) {
+        Eigen::Vector3d pos = candidate_traj.evaluateDeBoor(t);
+        double dist = edt_environment_->evaluateCoarseEDT(pos, -1.0);
+        if (dist < 0.1) traj_cost += 1000.0;  // High penalty for collision
+        else if (dist < 0.5) traj_cost += 100.0 / (dist + 0.1);  // Proximity penalty
+        traj_cost += 0.1;  // Length penalty
+      }
+      
+      trajectory_candidates.push_back(make_pair(traj_cost, candidate_traj));
+      ROS_INFO("[MPPI] Topology path %d generated trajectory with cost: %.3f", i, traj_cost);
+    } else {
+      ROS_WARN("[MPPI] Failed to generate trajectory for topology path %d", i);
+    }
+  }
+  
+  if (trajectory_candidates.empty()) {
+    ROS_ERROR("MPPI planning with all topology paths failed!");
     return false;
   }
+  
+  // Select the best trajectory (lowest cost)
+  auto best_candidate = min_element(trajectory_candidates.begin(), trajectory_candidates.end(),
+                                    [](const pair<double, NonUniformBspline>& a, const pair<double, NonUniformBspline>& b) {
+                                      return a.first < b.first;
+                                    });
+  
+  local_data_.position_traj_ = best_candidate->second;
+  global_data_.setLocalTraj(local_data_.position_traj_, t_now.toSec(),
+                            local_traj_duration + t_now.toSec(), 0.0);
+  updateTrajInfo();
+  ROS_INFO("[MPPI]: Successfully selected best trajectory from %zu candidates with cost: %.3f", 
+           trajectory_candidates.size(), best_candidate->first);
+  return true;
 }
 
 void FastPlannerManager::selectBestTraj(NonUniformBspline& traj) {
