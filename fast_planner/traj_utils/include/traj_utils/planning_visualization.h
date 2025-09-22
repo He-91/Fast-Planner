@@ -57,6 +57,12 @@ private:
     SELECT_PATH = 400
   };
 
+  enum MPPI_PLANNING_ID {
+    MPPI_SAMPLES = 1,
+    MPPI_BEST = 100,
+    MPPI_SELECTED = 200
+  };
+
   /* data */
   /* visib_pub is seperated from previous ones for different info */
   ros::NodeHandle node;
@@ -66,6 +72,7 @@ private:
   ros::Publisher visib_pub_;     // 3, visibility constraints
   ros::Publisher frontier_pub_;  // 4, frontier searching
   ros::Publisher yaw_pub_;       // 5, yaw trajectory
+  ros::Publisher mppi_pub_;      // 6, MPPI sample trajectories
   vector<ros::Publisher> pubs_;  //
 
   int last_topo_path1_num_;
@@ -73,6 +80,7 @@ private:
   int last_bspline_phase1_num_;
   int last_bspline_phase2_num_;
   int last_frontier_num_;
+  int last_mppi_samples_num_;
 
 public:
   PlanningVisualization(/* args */) {}
@@ -112,6 +120,13 @@ public:
 
   void drawTopoPathsPhase1(vector<vector<Eigen::Vector3d>>& paths, double line_width);
   void drawTopoPathsPhase2(vector<vector<Eigen::Vector3d>>& paths, double line_width);
+
+  // draw MPPI sample trajectories and selected path
+  void drawMPPISampleTrajectories(const vector<vector<Eigen::Vector3d>>& sample_trajectories,
+                                  const vector<double>& costs, double line_width = 0.02);
+  void drawMPPISelectedPath(const vector<Eigen::Vector3d>& selected_path, 
+                            double line_width = 0.08, 
+                            const Eigen::Vector4d& color = Eigen::Vector4d(0, 1, 0, 1));
 
   void drawGoal(Eigen::Vector3d goal, double resolution, const Eigen::Vector4d& color, int id = 0);
   void drawPrediction(ObjPrediction pred, double resolution, const Eigen::Vector4d& color, int id = 0);

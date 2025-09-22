@@ -49,11 +49,15 @@ PlanningVisualization::PlanningVisualization(ros::NodeHandle& nh) {
   yaw_pub_ = node.advertise<visualization_msgs::Marker>("/planning_vis/yaw", 20);
   pubs_.push_back(yaw_pub_);
 
+  mppi_pub_ = node.advertise<visualization_msgs::Marker>("/planning_vis/mppi", 20);
+  pubs_.push_back(mppi_pub_);
+
   last_topo_path1_num_     = 0;
   last_topo_path2_num_     = 0;
   last_bspline_phase1_num_ = 0;
   last_bspline_phase2_num_ = 0;
   last_frontier_num_       = 0;
+  last_mppi_samples_num_   = 0;
 }
 
 void PlanningVisualization::displaySphereList(const vector<Eigen::Vector3d>& list, double resolution,
@@ -427,5 +431,67 @@ Eigen::Vector4d PlanningVisualization::getColor(double h, double alpha) {
 
   return fcolor;
 }
+
+void PlanningVisualization::drawMPPISampleTrajectories(const vector<vector<Eigen::Vector3d>>& sample_trajectories,
+                                                       const vector<double>& costs, double line_width) {
+  // Clear existing MPPI sample trajectories
+  vector<Eigen::Vector3d> empty;
+  for (int i = 0; i < last_mppi_samples_num_; ++i) {
+    displayLineList(empty, empty, line_width, Eigen::Vector4d(1, 1, 1, 1), MPPI_SAMPLES + i % 50, 6);
+  }
+  
+  last_mppi_samples_num_ = std::min((int)sample_trajectories.size(), 20);  // Limit to 20 samples for visualization
+  
+  // Find cost range for color mapping
+  double min_cost = *std::min_element(costs.begin(), costs.end());
+  double max_cost = *std::max_element(costs.begin(), costs.end());
+  double cost_range = max_cost - min_cost;
+  
+  // Draw sample trajectories with cost-based colors
+  for (int i = 0; i < last_mppi_samples_num_; ++i) {
+    if (sample_trajectories[i].size() < 2) continue;
+    
+    vector<Eigen::Vector3d> edge_pt1, edge_pt2;
+    for (int j = 0; j < sample_trajectories[i].size() - 1; ++j) {
+      edge_pt1.push_back(sample_trajectories[i][j]);
+      edge_pt2.push_back(sample_trajectories[i][j + 1]);
+    }
+    
+    // Color based on cost: red = high cost, blue = low cost
+    double cost_ratio = cost_range > 1e-6 ? (costs[i] - min_cost) / cost_range : 0.0;
+    Eigen::Vector4d color;
+    color(0) = cost_ratio;      // Red component for high cost
+    color(1) = 0.1;             // Low green
+    color(2) = 1.0 - cost_ratio; // Blue component for low cost  
+    color(3) = 0.3;             // Semi-transparent
+    
+    displayLineList(edge_pt1, edge_pt2, line_width, color, MPPI_SAMPLES + i % 50, 6);
+  }
+  
+  ROS_INFO("[MPPI Visualization]: Displayed %d sample trajectories with costs from %.3f to %.3f", 
+           last_mppi_samples_num_, min_cost, max_cost);
+}
+
+void PlanningVisualization::drawMPPISelectedPath(const vector<Eigen::Vector3d>& selected_path, 
+                                                 double line_width, 
+                                                 const Eigen::Vector4d& color) {
+  // Clear existing selected path
+  vector<Eigen::Vector3d> empty;
+  displayLineList(empty, empty, line_width, color, MPPI_SELECTED, 6);
+  
+  if (selected_path.size() < 2) return;
+  
+  // Draw selected path
+  vector<Eigen::Vector3d> edge_pt1, edge_pt2;
+  for (int j = 0; j < selected_path.size() - 1; ++j) {
+    edge_pt1.push_back(selected_path[j]);
+    edge_pt2.push_back(selected_path[j + 1]);
+  }
+  
+  displayLineList(edge_pt1, edge_pt2, line_width, color, MPPI_SELECTED, 6);
+  
+  ROS_INFO("[MPPI Visualization]: Displayed selected path with %zu points", selected_path.size());
+}
+
 // PlanningVisualization::
 }  // namespace fast_planner

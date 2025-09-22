@@ -74,6 +74,16 @@ public:
      * @brief Get trajectory duration
      */
     double getTrajectoryDuration() const { return params_.horizon_length * params_.dt; }
+    
+    /**
+     * @brief Get sample trajectories for visualization
+     */
+    const std::vector<std::vector<Eigen::Vector3d>>& getSampleTrajectories() const { return sample_trajectories_; }
+    
+    /**
+     * @brief Get sample costs for visualization
+     */
+    const std::vector<double>& getSampleCosts() const { return sample_costs_; }
 
 private:
     MPPIParams params_;

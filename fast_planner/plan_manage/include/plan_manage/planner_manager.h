@@ -64,6 +64,9 @@ public:
   void setGlobalWaypoints(vector<Eigen::Vector3d>& waypoints);
 
   bool checkTrajCollision(double& distance);
+  
+  // Getter for MPPI controller (for visualization)
+  MPPIController* getMPPIController() { return mppi_controller_.get(); }
 
   PlanParameters pp_;
   LocalTrajData local_data_;

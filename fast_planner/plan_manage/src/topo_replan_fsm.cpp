@@ -443,6 +443,30 @@ bool TopoReplanFSM::callTopologicalTraj(int step) {
     
     visualization_->drawBsplinesPhase2(plan_data->topo_traj_pos2_, 0.075);
     visualization_->drawYawTraj(locdat->position_traj_, locdat->yaw_traj_, plan_data->dt_yaw_);
+    
+    // Add MPPI visualization if using MPPI planner
+    if (use_mppi_ && planner_manager_->getMPPIController()) {
+      MPPIController* mppi = planner_manager_->getMPPIController();
+      const auto& sample_trajectories = mppi->getSampleTrajectories();
+      const auto& sample_costs = mppi->getSampleCosts();
+      
+      if (!sample_trajectories.empty() && !sample_costs.empty()) {
+        // Visualize MPPI sample trajectories with cost-based colors
+        visualization_->drawMPPISampleTrajectories(sample_trajectories, sample_costs, 0.02);
+        
+        // Highlight the selected trajectory (current position trajectory) 
+        vector<Eigen::Vector3d> selected_path;
+        double tm, tmp;
+        locdat->position_traj_.getTimeSpan(tm, tmp);
+        for (double t = tm; t <= tmp; t += 0.05) {
+          selected_path.push_back(locdat->position_traj_.evaluateDeBoor(t));
+        }
+        visualization_->drawMPPISelectedPath(selected_path, 0.08, Eigen::Vector4d(0, 1, 0, 1));
+        
+        ROS_INFO("[MPPI Visualization]: Displayed %zu sample trajectories and selected path", 
+                 sample_trajectories.size());
+      }
+    }
 
     return true;
   } else {

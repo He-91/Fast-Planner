@@ -37,6 +37,9 @@
     
     <!-- Launch Mockamap for procedural environment -->
     <node pkg="mockamap" type="mockamap_node" name="mockamap_node" output="screen">
+      <!-- Remap to expected topic name for RViz compatibility -->
+      <remap from="global_cloud" to="/map_generator/global_cloud"/>
+      
       <param name="seed" type="int" value="511"/>
       <param name="update_freq" type="double" value="1.0"/>
       <param name="resolution" type="double" value="0.1"/>
@@ -114,7 +117,7 @@
 
   <!-- RViz visualization (common for both environments) -->
   <node name="rviz" pkg="rviz" type="rviz" output="screen" 
-        args="-d $(find plan_manage)/config/topo_replan.rviz" />
+        args="-d $(find plan_manage)/config/exp.rviz" />
 
   <!-- Information display -->
   <node pkg="rostopic" name="env_info" type="rostopic" 
