@@ -3,3 +3,14 @@ fast_planner/.vscode
 .clang-format
 build/
 */build/
+devel/
+*/devel/
+.catkin_workspace
+logs/
+install/
+*.log
+*~
+.DS_Store
+CMakeCache.txt
+CMakeFiles/
+*.cmake
