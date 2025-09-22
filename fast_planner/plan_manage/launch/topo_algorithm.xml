@@ -155,6 +155,7 @@
     <param name="mppi/w_collision" value="1000.0" type="double"/>
     <param name="mppi/w_goal" value="10.0" type="double"/>
     <param name="mppi/w_smoothness" value="1.0" type="double"/>
+    <param name="mppi/w_path_following" value="20.0" type="double"/>
     <param name="mppi/w_control" value="0.1" type="double"/>
     <param name="mppi/w_velocity" value="10.0" type="double"/>
     <param name="mppi/w_acceleration" value="5.0" type="double"/>

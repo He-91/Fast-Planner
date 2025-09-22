@@ -32,6 +32,7 @@ struct MPPIParams {
     double w_control;       // Control effort weight
     double w_velocity;      // Velocity limit weight
     double w_acceleration;  // Acceleration limit weight
+    double w_path_following; // Path following weight
     
     // Physical limits
     double max_vel;
