@@ -440,6 +440,14 @@ void PlanningVisualization::drawMPPISampleTrajectories(const vector<vector<Eigen
     displayLineList(empty, empty, line_width, Eigen::Vector4d(1, 1, 1, 1), MPPI_SAMPLES + i % 50, 6);
   }
   
+  // Safety check: ensure trajectories and costs have same size
+  if (sample_trajectories.empty() || costs.empty() || sample_trajectories.size() != costs.size()) {
+    last_mppi_samples_num_ = 0;
+    ROS_WARN("[MPPI Visualization]: Invalid input data - trajectories: %zu, costs: %zu", 
+             sample_trajectories.size(), costs.size());
+    return;
+  }
+  
   last_mppi_samples_num_ = std::min((int)sample_trajectories.size(), 20);  // Limit to 20 samples for visualization
   
   // Find cost range for color mapping
