@@ -71,7 +71,7 @@
         <param name="map/z_size"     value="$(arg map_size_z_)"/>
 
         <!-- Remap to use mockamap point cloud instead of random forest -->
-        <remap from="~global_map" to="/mockamap_node/global_cloud"/>
+        <remap from="~global_map" to="/map_generator/global_cloud"/>
         <remap from="~odometry"   to="$(arg odometry_topic)"/>
   </node>
 

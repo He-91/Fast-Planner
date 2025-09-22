@@ -655,6 +655,14 @@ Visualization Manager:
             {}
           Queue Size: 100
           Value: true
+        - Class: rviz/Marker
+          Enabled: true
+          Marker Topic: /planning_vis/mppi
+          Name: MPPI_Sample_Trajectories
+          Namespaces:
+            {}
+          Queue Size: 100
+          Value: true
       Enabled: false
       Name: Tracking
     - Alpha: 1
