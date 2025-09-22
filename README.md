@@ -104,6 +104,54 @@ Key MPPI parameters in `launch/topo_algorithm.xml`:
 
 ## Running Test Scenarios
 
+### Environment Selection
+
+The Fast-Planner now supports **two different simulation environments** that you can choose from:
+
+#### Environment 1: Random Forest (Default)
+Traditional Fast-Planner environment with randomly generated cylindrical obstacles.
+
+#### Environment 2: Mockamap Procedural 
+Advanced procedural environment using Perlin noise for more realistic terrain-like obstacles.
+
+### Quick Start with Environment Selection
+
+```bash
+# Terminal 1: Launch RViz visualization
+roslaunch plan_manage rviz.launch
+
+# Terminal 2: Choose your environment
+# Environment 1 (Random Forest - Default)
+roslaunch plan_manage topo_replan_environments.launch environment:=1
+
+# OR Environment 2 (Mockamap Procedural)  
+roslaunch plan_manage topo_replan_environments.launch environment:=2
+
+# Test procedure:
+# 1. Wait for the map to generate (red obstacles in RViz)
+# 2. Use "2D Nav Goal" tool in RViz to set a goal point
+# 3. Observe multiple topology paths being generated and visualized
+# 4. Watch the drone select the best path and execute smooth trajectory
+# 5. Try multiple goal points to see different scenarios
+```
+
+### Expected Behavior
+
+**Topology Path Visualization:**
+- **Yellow/Orange lines**: Filtered topology paths (shows 4+ path options)
+- **Colored lines**: Selected topology paths (best candidates)
+- **Green trajectory**: Final optimized B-spline trajectory
+- **Blue arrow**: Current drone position and orientation
+
+**Console Output:**
+```
+[Topo]: Visualizing 4 filtered topology paths
+[Topo]: Visualizing 2 selected topology paths  
+[MPPI] Testing 2 topology paths for best trajectory
+[MPPI] Testing topology path 0 with 12 points
+[MPPI]: Successfully selected best trajectory from 2 candidates with cost: 45.234
+```
+
 ### Scenario 1: Basic MPPI Planning with Simple Obstacles
 
 This scenario tests MPPI planning in a structured environment with fixed obstacles.
@@ -112,8 +160,8 @@ This scenario tests MPPI planning in a structured environment with fixed obstacl
 # Terminal 1: Start visualization
 roslaunch plan_manage rviz.launch
 
-# Terminal 2: Launch basic MPPI planning
-roslaunch plan_manage topo_replan.launch
+# Terminal 2: Launch basic MPPI planning (Environment 1)
+roslaunch plan_manage topo_replan_environments.launch environment:=1
 
 # Test procedure:
 # 1. Wait for the random map to generate (red obstacles in RViz)
@@ -122,10 +170,41 @@ roslaunch plan_manage topo_replan.launch
 # 4. Try multiple goal points to test different scenarios
 
 # Expected behavior:
-# - Green trajectory shows the planned path
-# - Drone smoothly avoids obstacles
-# - Console shows MPPI cost information and trajectory generation logs
+# - Yellow/Orange lines show multiple topology path options (4+ paths)
+# - Colored lines show selected best topology paths  
+# - Green trajectory shows the final planned path
+# - Drone smoothly avoids obstacles using MPPI optimization
+# - Console shows topology path generation and MPPI cost information
 ```
+
+### Scenario 2: Advanced Procedural Environment
+
+Test MPPI planning in complex procedural terrain.
+
+```bash  
+# Terminal 1: Start visualization
+roslaunch plan_manage rviz.launch
+
+# Terminal 2: Launch procedural environment (Environment 2)
+roslaunch plan_manage topo_replan_environments.launch environment:=2
+
+# Expected behavior:
+# - More complex terrain-like obstacles from Perlin noise
+# - Multiple topology paths adapting to complex geometry
+# - MPPI controller optimizing through narrow passages
+# - Smooth trajectory following in challenging environments
+```
+
+### Manual Environment Launch (Advanced)
+
+For more control, you can launch environments manually:
+
+```bash
+# Traditional approach (Environment 1 only)
+roslaunch plan_manage topo_replan.launch
+
+# With mockamap directly  
+roslaunch mockamap fast_planner_with_mockamap.launch
 
 ### Scenario 2: MPPI with Flyable Obstacles (Advanced)
 
